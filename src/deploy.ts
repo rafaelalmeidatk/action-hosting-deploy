@@ -52,6 +52,8 @@ export type ProductionDeployConfig = {
   target?: string;
 };
 
+export type Credentials = { gacFilename: string } | { firebaseToken: string };
+
 export function interpretChannelDeployResult(
   deployResult: ChannelSuccessResult
 ): { expireTime: string; urls: string[] } {
@@ -68,11 +70,16 @@ export function interpretChannelDeployResult(
 
 async function execWithCredentials(
   args: string[],
-  projectId,
-  gacFilename,
+  projectId: string,
+  credentials: Credentials,
   debug: boolean = false
 ) {
   let deployOutputBuf: Buffer[] = [];
+
+  const commandCredentials =
+    "gacFilename" in credentials
+      ? { GOOGLE_APPLICATION_CREDENTIALS: credentials.gacFilename }
+      : { FIREBASE_TOKEN: credentials.firebaseToken };
 
   try {
     await exec(
@@ -93,7 +100,7 @@ async function execWithCredentials(
         env: {
           ...process.env,
           FIREBASE_DEPLOY_AGENT: "action-hosting-deploy",
-          GOOGLE_APPLICATION_CREDENTIALS: gacFilename, // the CLI will automatically authenticate with this env variable set
+          ...commandCredentials,
         },
       }
     );
@@ -105,7 +112,7 @@ async function execWithCredentials(
       console.log(
         "Retrying deploy with the --debug flag for better error output"
       );
-      await execWithCredentials(args, projectId, gacFilename, true);
+      await execWithCredentials(args, projectId, credentials, true);
     } else {
       throw e;
     }
@@ -117,7 +124,7 @@ async function execWithCredentials(
 }
 
 export async function deployPreview(
-  gacFilename: string,
+  credentials: Credentials,
   deployConfig: DeployConfig
 ) {
   const { projectId, channelId, target, expires } = deployConfig;
@@ -130,7 +137,7 @@ export async function deployPreview(
       ...(expires ? ["--expires", expires] : []),
     ],
     projectId,
-    gacFilename
+    credentials
   );
 
   const deploymentResult = JSON.parse(deploymentText.trim()) as
@@ -141,7 +148,7 @@ export async function deployPreview(
 }
 
 export async function deployProductionSite(
-  gacFilename,
+  credentials: Credentials,
   productionDeployConfig: ProductionDeployConfig
 ) {
   const { projectId, target } = productionDeployConfig;
@@ -149,7 +156,7 @@ export async function deployProductionSite(
   const deploymentText = await execWithCredentials(
     ["deploy", "--only", `hosting${target ? ":" + target : ""}`],
     projectId,
-    gacFilename
+    credentials
   );
 
   const deploymentResult = JSON.parse(deploymentText) as
